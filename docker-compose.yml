@@ -1,0 +1,19 @@
+---
+version: '3'
+services:
+  kafka-zookeeper:
+    image: openzipkin/zipkin-kafka
+    ports:
+      - 2181:2181
+      - 9092:9092
+      - 19092:19092
+  zipkin:
+    image: jeqo/zipkin-kafka:0.5.3
+    ports:
+      - 9411:9411
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka-zookeeper:9092
+    volumes:
+      - zipkin:/data
+volumes:
+  zipkin:
