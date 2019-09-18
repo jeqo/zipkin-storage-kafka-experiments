@@ -16,6 +16,7 @@
 
   <modules>
     <module>sample-error-trace</module>
+    <module>path-aggregate</module>
   </modules>
 
   <properties>
@@ -25,6 +26,7 @@
     <zipkin-storage-kafka.version>0.5.2</zipkin-storage-kafka.version>
     <logback.version>1.2.3</logback.version>
     <micrometer.version>1.2.0</micrometer.version>
+    <junit.version>5.5.1</junit.version>
   </properties>
 
   <dependencyManagement>
@@ -70,6 +72,12 @@
         <artifactId>micrometer-registry-prometheus</artifactId>
         <version>kafka-metrics-SNAPSHOT</version>
       </dependency>
+      <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>${junit.version}</version>
+        <scope>test</scope>
+      </dependency>
     </dependencies>
   </dependencyManagement>
 
@@ -78,6 +86,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.8.1</version>
         <configuration>
           <source>8</source>
           <target>8</target>

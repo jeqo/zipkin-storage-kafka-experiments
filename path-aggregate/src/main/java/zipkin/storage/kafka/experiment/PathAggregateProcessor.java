@@ -25,7 +25,7 @@ import org.apache.kafka.streams.Topology;
 public class PathAggregateProcessor {
 
   final String traceTopicName;
-  final String errorTraceTopicName;
+  final String pathTopicName;
 
   final Properties streamsConfig;
 
@@ -35,7 +35,7 @@ public class PathAggregateProcessor {
 
   PathAggregateProcessor(Builder builder) {
     this.traceTopicName = builder.traceTopicName;
-    this.errorTraceTopicName = builder.errorTraceTopicName;
+    this.pathTopicName = builder.pathTopicName;
     this.streamsConfig = builder.streamsConfig;
   }
 
@@ -45,7 +45,7 @@ public class PathAggregateProcessor {
         .bootstrapServers(config.getString("kafka-streams.bootstrap-servers"))
         .applicationId(config.getString("kafka-streams.application-id"))
         .traceTopicName(config.getString("kafka-topics.trace-topic"))
-        .errorTraceTopicName(config.getString("kafka-topics.error-trace-topic"))
+        .pathTopicName(config.getString("kafka-topics.path-topic"))
         .build();
     processor.run();
   }
@@ -88,10 +88,10 @@ public class PathAggregateProcessor {
   static class Builder {
 
     String traceTopicName = "zipkin-trace";
-    String errorTraceTopicName = "zipkin-error-trace";
+    String pathTopicName = "zipkin-path";
 
     String bootstrapServers = "localhost:19092";
-    String applicationId = "zipkin-sample-error-trace-processor";
+    String applicationId = "zipkin-path-aggregate-processor";
 
     Properties streamsConfig = new Properties();
 
@@ -123,11 +123,11 @@ public class PathAggregateProcessor {
       return this;
     }
 
-    Builder errorTraceTopicName(String errorTraceTopicName) {
+    Builder pathTopicName(String errorTraceTopicName) {
       if (errorTraceTopicName == null) {
-        throw new NullPointerException("errorTraceTopicName == null");
+        throw new NullPointerException("pathTopicName == null");
       }
-      this.errorTraceTopicName = errorTraceTopicName;
+      this.pathTopicName = errorTraceTopicName;
       return this;
     }
   }

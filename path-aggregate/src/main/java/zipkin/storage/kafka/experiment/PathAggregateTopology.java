@@ -1,7 +1,6 @@
 package zipkin.storage.kafka.experiment;
 
 import java.time.Duration;
-import java.util.List;
 import java.util.function.Supplier;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KeyValue;
@@ -11,13 +10,15 @@ import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.Materialized;
 import org.apache.kafka.streams.kstream.Produced;
 import org.apache.kafka.streams.kstream.TimeWindows;
-import zipkin2.Span;
 import zipkin2.storage.kafka.streams.serdes.SpansSerde;
+
+import static org.apache.kafka.streams.kstream.Suppressed.BufferConfig.unbounded;
+import static org.apache.kafka.streams.kstream.Suppressed.untilWindowCloses;
 
 public class PathAggregateTopology implements Supplier<Topology> {
 
   final String traceTopicName;
-  final String errorTraceTopicName;
+  final String pathTopicName;
 
   final SpansSerde spansSerde;
   final PathSerde pathSerde;
@@ -25,7 +26,7 @@ public class PathAggregateTopology implements Supplier<Topology> {
 
   PathAggregateTopology(PathAggregateProcessor processor) {
     this.traceTopicName = processor.traceTopicName;
-    this.errorTraceTopicName = processor.errorTraceTopicName;
+    this.pathTopicName = processor.pathTopicName;
     spansSerde = new SpansSerde();
     pathSerde = new PathSerde();
     pathAggregateSerde = new PathAggregateSerde();
@@ -36,16 +37,20 @@ public class PathAggregateTopology implements Supplier<Topology> {
     builder.stream(traceTopicName, Consumed.with(Serdes.String(), spansSerde))
         .mapValues((readOnlyKey, value) -> Path.create(value))
         .map((traceId, path) -> KeyValue.pair(path.path(), path))
-        .through(errorTraceTopicName, Produced.with(Serdes.String(), pathSerde))
+        .through(pathTopicName, Produced.with(Serdes.String(), pathSerde))
         .groupByKey()
         .windowedBy(TimeWindows.of(Duration.ofMinutes(1)).grace(Duration.ZERO))
         .aggregate(PathAggregate::new,
-            (key, path, aggregate) -> aggregate.add(path));
+            (key, path, aggregate) -> aggregate.add(path),
+            Materialized.with(Serdes.String(), pathAggregateSerde))
+        .suppress(untilWindowCloses(unbounded()))
+        .toStream()
+        .foreach((key, value) ->
+            System.out.println(("from: " + key.window().startTime())
+                + (" to: " + key.window().endTime())
+                + (" path: " + value.path)
+                + (" counter: " + value.callCount)
+                + (" error: " + value.errorCount)));
     return builder.build();
-  }
-
-  private boolean isError(List<Span> spans) {
-    return spans.stream().anyMatch(span ->
-        !span.tags().getOrDefault("error", "").isEmpty());
   }
 }
