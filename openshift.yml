@@ -108,10 +108,13 @@ spec:
           env:
             - name: STORAGE_TYPE
               value: kafka
+            # Gather hostname (name-${POD_ID}) from metadata
             - name: HOSTNAME
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            # Mapping hostname to Kubernetes DNS defined service name (${NAME}-${POD_ID}.${SVC}.${NAMESPACE}.svc.cluster.local),
+            # then instance storage becomes accessible between them
             - name: KAFKA_STORAGE_HOST_NAME
               value: $(HOSTNAME).zipkin.zipkin.svc.cluster.local
             - name: KAFKA_BOOTSTRAP_SERVERS
