@@ -1,0 +1,200 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app: zipkin-aggregation
+  name: zipkin-aggregation
+spec:
+  replicas: 3
+  selector:
+    serviceName: zipkin-aggregation
+    matchLabels:
+      app: zipkin-aggregation
+  template:
+    metadata:
+      labels:
+        app: zipkin-aggregation
+    spec:
+      containers:
+        - image: artifactory.statnett.no/registry/jeqo/zipkin-kafka:0.6.1-SNAPSHOT
+          imagePullPolicy: Always
+          name: zipkin-aggregation
+          ports:
+            - containerPort: 9411
+              protocol: TCP
+              name: http
+            - containerPort: 9412
+              protocol: TCP
+              name: storage
+          resources:
+            requests:
+              memory: 1Gi
+              cpu: 200m
+            limits:
+              memory: 8Gi
+              cpu: 2000m
+          env:
+            - name: STORAGE_TYPE
+              value: kafka
+            - name: QUERY_ENABLED
+              value: "false"
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: zipkin
+                  key: KAFKA_BOOTSTRAP_SERVERS
+            - name: KAFKA_STORAGE_DIR
+              value: /zipkin/data
+            - name: JAVA_OPTS
+              value: "-Djava.security.egd=file:/dev/./urandom 
+              -Dzipkin.storage.kafka.aggregation-stream-overrides.producer.max.request.size=4500000 
+              -Dzipkin.storage.kafka.trace-store-stream-overrides.producer.max.request.size=4500000
+              -Dzipkin.storage.kafka.aggregation-stream-app-id=zipkin-aggregation-v1"
+            - name: KAFKA_GROUP_ID
+              value: zipkin-kafka-v1
+            - name: SELF_TRACING_ENABLED
+              value: "true"
+            - name: SELF_TRACING_SAMPLE_RATE
+              value: "0.001"
+          volumeMounts:
+            - name: zipkin-kafka-aggregation
+              mountPath: "/zipkin/data"
+  volumeClaimTemplates:
+    - metadata:
+        name: zipkin-kafka-aggregation
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        storageClassName: "glusterfs-storage"
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app: zipkin
+  name: zipkin
+spec:
+  replicas: 3
+  serviceName: zipkin
+  selector:
+    matchLabels:
+      app: zipkin
+  template:
+    metadata:
+      labels:
+        app: zipkin
+    spec:
+      containers:
+        - image: artifactory.statnett.no/registry/jeqo/zipkin-kafka:0.6.1-SNAPSHOT
+          imagePullPolicy: Always
+          name: zipkin
+          ports:
+            - containerPort: 9411
+              protocol: TCP
+              name: http
+            - containerPort: 9412
+              protocol: TCP
+              name: storage
+          resources:
+            requests:
+              memory: 1Gi
+              cpu: 200m
+            limits:
+              memory: 8Gi
+              cpu: 2000m
+          env:
+            - name: STORAGE_TYPE
+              value: kafka
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: KAFKA_STORAGE_HOST_NAME
+              value: $(HOSTNAME).zipkin.zipkin.svc.cluster.local
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: zipkin
+                  key: KAFKA_BOOTSTRAP_SERVERS
+            - name: KAFKA_STORAGE_DIR
+              value: /zipkin/data
+            - name: JAVA_OPTS
+              value: "-Djava.security.egd=file:/dev/./urandom 
+              -Dzipkin.storage.kafka.aggregation-stream-overrides.producer.max.request.size=4500000 
+              -Dzipkin.storage.kafka.trace-store-stream-overrides.producer.max.request.size=4500000
+              -Dzipkin.storage.kafka.span-consumer-enabled=false
+              -Dzipkin.storage.kafka.trace-store-stream-app-id=zipkin-trace-store-v1
+              -Dzipkin.storage.kafka.dependency-store-stream-app-id=zipkin-dependency-store-v1"
+            - name: COLLECTOR_KAFKA_ENABLED
+              value: "false"
+            - name: COLLECTOR_HTTP_ENABLED
+              value: "false"
+            - name: SELF_TRACING_ENABLED
+              value: "true"
+            - name: SELF_TRACING_SAMPLE_RATE
+              value: "0.001"
+          volumeMounts:
+            - name: zipkin-kafka
+              mountPath: "/zipkin/data"
+  volumeClaimTemplates:
+    - metadata:
+        name: zipkin-kafka
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        storageClassName: "glusterfs-storage"
+        resources:
+          requests:
+            storage: 10Gi
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: zipkin
+  annotations:
+    prometheus.io/port: '9411'
+    prometheus.io/path: '/actuator/prometheus'
+    prometheus.io/scheme: http
+    prometheus.io/scrape: 'true'
+spec:
+  selector:
+    app: zipkin
+  clusterIP: None
+  ports:
+    - name: http
+      port: 9411
+      targetPort: 9411
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: zipkin-storage
+  annotations:
+    prometheus.io/port: '9412'
+    prometheus.io/path: '/metrics'
+    prometheus.io/scheme: http
+    prometheus.io/scrape: 'true'
+spec:
+  selector:
+    app: zipkin
+  clusterIP: None
+  ports:
+    - name: storage
+      port: 9412
+      targetPort: 9412
+---
+apiVersion: v1
+kind: Route
+metadata:
+  name: tracing
+spec:
+  path: /
+  port:
+    targetPort: http
+  to:
+    kind: Service
+    name: zipkin
+    wight: 100
+  wildcardPolicy: None
