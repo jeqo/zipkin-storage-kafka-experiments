@@ -1,6 +1,7 @@
 package zipkin.storage.kafka.experiment;
 
-import java.util.List;
+import java.util.Collection;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -16,10 +17,14 @@ public class SampleErrorTraceTopology implements Supplier<Topology> {
   final String errorTraceTopicName;
 
   final SpansSerde spansSerde;
+  private final Predicate<Collection<Span>> traceSamplingPredicate;
 
-  public SampleErrorTraceTopology(String traceTopicName, String errorTraceTopicName) {
+  public SampleErrorTraceTopology(String traceTopicName,
+      String errorTraceTopicName,
+      Predicate<Collection<Span>> traceSamplingPredicate) {
     this.traceTopicName = traceTopicName;
     this.errorTraceTopicName = errorTraceTopicName;
+    this.traceSamplingPredicate = traceSamplingPredicate;
 
     spansSerde = new SpansSerde();
   }
@@ -27,19 +32,15 @@ public class SampleErrorTraceTopology implements Supplier<Topology> {
   SampleErrorTraceTopology(SampleErrorTraceProcessor processor) {
     this.traceTopicName = processor.traceTopicName;
     this.errorTraceTopicName = processor.errorTraceTopicName;
+    this.traceSamplingPredicate = processor.traceSamplingPredicate;
     spansSerde = new SpansSerde();
   }
 
   public Topology get() {
     StreamsBuilder builder = new StreamsBuilder();
     builder.stream(traceTopicName, Consumed.with(Serdes.String(), spansSerde))
-        .filter((traceId, spans) -> isError(spans))
+        .filter((traceId, spans) -> traceSamplingPredicate.test(spans))
         .to(errorTraceTopicName, Produced.with(Serdes.String(), spansSerde));
     return builder.build();
-  }
-
-  private boolean isError(List<Span> spans) {
-    return spans.stream().anyMatch(span ->
-        !span.tags().getOrDefault("error", "").isEmpty());
   }
 }
