@@ -16,11 +16,20 @@ import io.micrometer.core.instrument.binder.kafka.KafkaMetrics;
 import io.micrometer.core.instrument.binder.system.ProcessorMetrics;
 import io.micrometer.prometheus.PrometheusConfig;
 import io.micrometer.prometheus.PrometheusMeterRegistry;
+import java.util.Collection;
 import java.util.Properties;
+import java.util.function.Predicate;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.Topology;
+import zipkin.storage.kafka.experiment.predicates.CompositeTracePredicate;
+import zipkin.storage.kafka.experiment.predicates.ErrorTracePredicate;
+import zipkin.storage.kafka.experiment.predicates.SlowTracePredicate;
+import zipkin.storage.kafka.experiment.predicates.TraceSamplingPredicate;
+import zipkin2.Span;
+
+import static java.util.Arrays.asList;
 
 public class SampleErrorTraceProcessor {
 
@@ -28,6 +37,7 @@ public class SampleErrorTraceProcessor {
   final String errorTraceTopicName;
 
   final Properties streamsConfig;
+  final Predicate<Collection<Span>> traceSamplingPredicate;
 
   static Builder newBuilder() {
     return new Builder();
@@ -37,6 +47,7 @@ public class SampleErrorTraceProcessor {
     this.traceTopicName = builder.traceTopicName;
     this.errorTraceTopicName = builder.errorTraceTopicName;
     this.streamsConfig = builder.streamsConfig;
+    this.traceSamplingPredicate = builder.traceSamplingPredicate;
   }
 
   public static void main(String[] args) {
@@ -46,6 +57,11 @@ public class SampleErrorTraceProcessor {
         .applicationId(config.getString("kafka-streams.application-id"))
         .traceTopicName(config.getString("kafka-topics.trace-topic"))
         .errorTraceTopicName(config.getString("kafka-topics.error-trace-topic"))
+        .traceSamplingPredicate(new CompositeTracePredicate(asList(
+            new ErrorTracePredicate(),
+            new SlowTracePredicate(1_000_000L),
+            new TraceSamplingPredicate(0.1f))
+        ))
         .build();
     processor.run();
   }
@@ -94,6 +110,7 @@ public class SampleErrorTraceProcessor {
     String applicationId = "zipkin-sample-error-trace-processor";
 
     Properties streamsConfig = new Properties();
+    Predicate<Collection<Span>> traceSamplingPredicate;
 
     Builder() {
       streamsConfig.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
@@ -128,6 +145,11 @@ public class SampleErrorTraceProcessor {
         throw new NullPointerException("errorTraceTopicName == null");
       }
       this.errorTraceTopicName = errorTraceTopicName;
+      return this;
+    }
+
+    Builder traceSamplingPredicate(Predicate<Collection<Span>> traceSamplingPredicate) {
+      this.traceSamplingPredicate = traceSamplingPredicate;
       return this;
     }
   }
